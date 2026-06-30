@@ -17,8 +17,9 @@ export default async function handler(req, res) {
   const targetUrl = `${BACKEND}${pathname}${qs ? '?' + qs : ''}`
 
   const headers = { 'Content-Type': 'application/json' }
-  if (process.env.HF_TOKEN) {
-    headers['Authorization'] = `Bearer ${process.env.HF_TOKEN}`
+  const token = process.env.HF_TOKEN || process.env.VITE_HF_TOKEN
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`
   }
 
   const fetchOptions = {
