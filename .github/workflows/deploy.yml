@@ -29,6 +29,7 @@ jobs:
         run: npm run build
         env:
           VITE_BACKEND_URL: https://rohith696m-ai-metaenrichment-backend.hf.space
+          VITE_HF_TOKEN: ${{ vars.HF_TOKEN }}
 
       - name: Deploy to gh-pages
         uses: peaceiris/actions-gh-pages@v4
