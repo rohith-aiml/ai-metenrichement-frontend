@@ -11,6 +11,9 @@ import {
 // Converts an array of strings to react-select option objects
 const toOptions = (arr) => arr.map(v => ({ value: v, label: v }))
 
+const ALL_DATES_OPT = { value: '__all__', label: 'All' }
+const isAllDates = (selected) => selected.some(d => d.value === '__all__')
+
 export default function FilterPanel({
   onApply,
   onEnrich,
@@ -66,7 +69,8 @@ export default function FilterPanel({
     if (!project || !contentType || selectedDates.length === 0) return
     setSelectedPartners([])
     setEnrichedMetaStatus('')
-    getPartners(project, contentType, selectedDates.map(d => d.value))
+    const datesParam = isAllDates(selectedDates) ? [] : selectedDates.map(d => d.value)
+    getPartners(project, contentType, datesParam)
       .then(list => setPartnerOpts(toOptions(list)))
   }, [selectedDates])
 
@@ -74,9 +78,10 @@ export default function FilterPanel({
   useEffect(() => {
     if (!project || !contentType || selectedDates.length === 0) return
     setEnrichedMetaStatus('')
+    const datesParam = isAllDates(selectedDates) ? [] : selectedDates.map(d => d.value)
     getEnrichedMetaStatuses(
       project, contentType,
-      selectedDates.map(d => d.value),
+      datesParam,
       selectedPartners.map(p => p.value),
     ).then(list => setStatusOpts(list))
   }, [selectedPartners, selectedDates])
@@ -87,7 +92,7 @@ export default function FilterPanel({
   const _filterBody = () => ({
     project_id:           project,
     content_type:         contentType,
-    dates:                selectedDates.map(d => d.value),
+    dates:                isAllDates(selectedDates) ? [] : selectedDates.map(d => d.value),
     partners:             selectedPartners.map(p => p.value),
     enriched_meta_status: enrichedMetaStatus,
     page:                 1,
@@ -133,9 +138,17 @@ export default function FilterPanel({
           <label>Published Date</label>
           <Select
             isMulti
-            options={toOptions(dates)}
+            options={dates.length > 0 ? [ALL_DATES_OPT, ...toOptions(dates)] : []}
             value={selectedDates}
-            onChange={setSelectedDates}
+            onChange={(selected) => {
+              if (!selected || selected.length === 0) { setSelectedDates([]); return }
+              const last = selected[selected.length - 1]
+              if (last.value === '__all__') {
+                setSelectedDates([ALL_DATES_OPT])
+              } else {
+                setSelectedDates(selected.filter(d => d.value !== '__all__'))
+              }
+            }}
             isDisabled={!contentType || dates.length === 0}
             placeholder="— Select date(s) —"
             classNamePrefix="rs"

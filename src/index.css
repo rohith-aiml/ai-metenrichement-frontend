@@ -244,7 +244,7 @@ body {
   transition: border-color 0.2s !important;
 }
 .rs__control--is-focused { border-color: var(--accent) !important; }
-.rs__menu { background: var(--surface2) !important; border: 1px solid var(--border) !important; border-radius: var(--radius-sm) !important; }
+.rs__menu { background: var(--surface2) !important; border: 1px solid var(--border) !important; border-radius: var(--radius-sm) !important; z-index: 9999 !important; }
 .rs__option { font-size: 0.85rem !important; color: var(--text) !important; cursor: pointer !important; }
 .rs__option--is-focused { background: #6c63ff22 !important; }
 .rs__option--is-selected { background: var(--accent) !important; }
