@@ -8,11 +8,12 @@
 const BACKEND = 'https://rohith696m-ai-metaenrichment-backend.hf.space'
 
 export default async function handler(req, res) {
-  const segments = Array.isArray(req.query.path) ? req.query.path : [req.query.path].filter(Boolean)
+  const raw = req.query['...path']
+  const segments = Array.isArray(raw) ? raw : [raw].filter(Boolean)
   const pathname = '/' + segments.join('/')
 
   const params = { ...req.query }
-  delete params.path
+  delete params['...path']
   const qs = new URLSearchParams(params).toString()
   const targetUrl = `${BACKEND}${pathname}${qs ? '?' + qs : ''}`
 
