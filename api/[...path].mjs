@@ -1,30 +1,29 @@
 /**
  * Vercel Serverless Proxy
  *
- * All /api/* requests are handled here server-side.
- * Vercel (HTTPS) → this function → EC2 backend (HTTP)
- * The browser never touches the HTTP URL — no mixed content.
+ * All /api/* requests are forwarded here server-side.
+ * HF_TOKEN is read from Vercel environment variables — never exposed to the browser.
  */
 
-const BACKEND = 'http://13.232.27.217:8080'
+const BACKEND = 'https://rohith696m-ai-metaenrichment-backend.hf.space'
 
 export default async function handler(req, res) {
-  // req.query.path is an array from [...path] catch-all
-  // e.g. /api/filter → ['filter'],  /api/select_match → ['select_match']
-  const segments  = Array.isArray(req.query.path) ? req.query.path : [req.query.path].filter(Boolean)
-  const pathname  = '/' + segments.join('/')
+  const segments = Array.isArray(req.query.path) ? req.query.path : [req.query.path].filter(Boolean)
+  const pathname = '/' + segments.join('/')
 
-  // Re-attach any query params that aren't the path segments
   const params = { ...req.query }
   delete params.path
   const qs = new URLSearchParams(params).toString()
-
   const targetUrl = `${BACKEND}${pathname}${qs ? '?' + qs : ''}`
 
+  const headers = { 'Content-Type': 'application/json' }
+  if (process.env.HF_TOKEN) {
+    headers['Authorization'] = `Bearer ${process.env.HF_TOKEN}`
+  }
+
   const fetchOptions = {
-    method:  req.method,
-    headers: { 'Content-Type': 'application/json' },
-    // do NOT follow redirects — surface them as errors instead
+    method: req.method,
+    headers,
     redirect: 'error',
   }
 
@@ -35,11 +34,8 @@ export default async function handler(req, res) {
   try {
     const backendRes = await fetch(targetUrl, fetchOptions)
     const text = await backendRes.text()
-
-    // Try to parse as JSON; fall back to plain text
     let data
     try { data = JSON.parse(text) } catch { data = text }
-
     res.status(backendRes.status).json(data)
   } catch (err) {
     console.error(`Proxy error → ${targetUrl}:`, err.message)

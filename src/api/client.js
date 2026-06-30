@@ -1,6 +1,10 @@
 import axios from 'axios'
 
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'https://rohith696m-ai-metaenrichment-backend.hf.space'
+// In production (Vercel), all calls go through /api proxy (token added server-side).
+// In dev, calls go directly to the local backend or VITE_BACKEND_URL.
+const BACKEND_URL = import.meta.env.PROD
+  ? '/api'
+  : (import.meta.env.VITE_BACKEND_URL || 'http://localhost:8080')
 
 // Serialize array params as repeated keys: dates=a&dates=b (FastAPI List[str] compatible)
 const api = axios.create({
