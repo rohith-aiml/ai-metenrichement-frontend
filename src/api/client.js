@@ -2,15 +2,9 @@ import axios from 'axios'
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'https://rohith696m-ai-metaenrichment-backend.hf.space'
 
-const headers = {}
-if (import.meta.env.VITE_HF_TOKEN) {
-  headers['Authorization'] = `Bearer ${import.meta.env.VITE_HF_TOKEN}`
-}
-
 // Serialize array params as repeated keys: dates=a&dates=b (FastAPI List[str] compatible)
 const api = axios.create({
   baseURL: BACKEND_URL,
-  headers,
   paramsSerializer: (params) => {
     const parts = []
     for (const [key, val] of Object.entries(params)) {

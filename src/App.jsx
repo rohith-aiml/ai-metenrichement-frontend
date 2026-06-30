@@ -467,9 +467,7 @@ export default function App() {
 const _BACKEND = import.meta.env.VITE_BACKEND_URL || 'https://rohith696m-ai-metaenrichment-backend.hf.space'
 
 function _backendHeaders() {
-  const h = {}
-  if (import.meta.env.VITE_HF_TOKEN) h['Authorization'] = `Bearer ${import.meta.env.VITE_HF_TOKEN}`
-  return h
+  return {}
 }
 
 async function _backendGet(path) {
