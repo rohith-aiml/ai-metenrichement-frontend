@@ -2,7 +2,7 @@ import { useState } from 'react'
 
 // Credentials are compared against a pre-computed SHA-256 digest so the
 // plain-text values never appear in the final JS bundle.
-const CRED_HASH = '2c99137eb87a22852b69819071a22fa1fcc3b01e0df62ecc1f2a604f9e521cf3'
+const CRED_HASH = '7a7435e9cb38b377a4c7ba795c6c0548363146c1163e2b50bd27b2a1812840f7'
 
 async function _sha256(str) {
   const buf = await crypto.subtle.digest(
