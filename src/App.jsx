@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef } from 'react'
+import Papa from 'papaparse'
+import * as XLSX from 'xlsx'
 import FilterPanel from './components/FilterPanel'
 import Pagination from './components/Pagination'
-import { applyFilter, runEnrich, searchContents, advancedSearch, dubbedSearch, moderateImages } from './api/client'
+import { applyFilter, runEnrich, searchContents, advancedSearch, dubbedSearch, moderateImages, enrichUpload } from './api/client'
 import { logout } from './Login'
 import {
   hasRootFolder, pickRootFolder, getFolderInfo,
@@ -138,6 +140,106 @@ export default function App() {
   const updateCardState = (cid, patch) => {
     cardStateRef.current[cid] = { ...cardStateRef.current[cid], ...patch }
     saveSession({ cardState: cardStateRef.current })
+  }
+
+  // ── Upload enrichment ────────────────────────────────────────────────────────
+  const uploadRef                               = useRef(null)
+  const [uploadPanel,   setUploadPanel]         = useState(false)
+  const [uploadRows,    setUploadRows]           = useState([])   // original parsed rows
+  const [enrichedRows,  setEnrichedRows]         = useState(null) // null = not yet done
+  const [uploadEnriching, setUploadEnriching]   = useState(false)
+  const [uploadError,   setUploadError]          = useState('')
+
+  const CSV_COLS = ['contentid','contentname','contenttype','language','releaseyear',
+    'source_1_rating','Manual_Genre','Manual_Keywords','Updated_release_year',
+    'Original_Language','IMDB ID','TMDB ID','Partner_Genre','cast','Partner','Date']
+
+  function _normaliseRow(r) {
+    // case-insensitive column lookup
+    const lc = {}
+    for (const [k, v] of Object.entries(r)) lc[k.trim().toLowerCase().replace(/\s+/g,'')] = String(v ?? '')
+    return {
+      contentid:   lc['contentid']   || '',
+      contentname: lc['contentname'] || '',
+      contenttype: lc['contenttype'] || '',
+      language:    lc['language']    || '',
+      releaseyear: lc['releaseyear'] || '',
+      cast:        lc['cast']        || '',
+      director:    lc['director']    || '',
+    }
+  }
+
+  async function handleUploadFile(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    e.target.value = ''
+    setUploadError('')
+    setEnrichedRows(null)
+
+    let rows = []
+    try {
+      if (file.name.match(/\.xlsx?$/i)) {
+        const buf = await file.arrayBuffer()
+        const wb  = XLSX.read(buf)
+        const ws  = wb.Sheets[wb.SheetNames[0]]
+        rows = XLSX.utils.sheet_to_json(ws, { defval: '' })
+      } else {
+        rows = await new Promise((res, rej) =>
+          Papa.parse(file, {
+            header: true, skipEmptyLines: true,
+            complete: r => res(r.data),
+            error:    e => rej(e),
+          })
+        )
+      }
+    } catch (err) {
+      setUploadError('Failed to parse file: ' + err.message)
+      return
+    }
+
+    if (!rows.length) { setUploadError('File is empty or has no data rows.'); return }
+    setUploadRows(rows)
+    setUploadPanel(true)
+
+    // run enrichment
+    setUploadEnriching(true)
+    try {
+      const items = rows.slice(0, 500).map(_normaliseRow)
+      const results = await enrichUpload(items)
+      // merge enrichment back — preserve all original columns
+      const byId = {}
+      results.forEach(r => { byId[r.contentid] = r })
+      const merged = rows.map(row => {
+        const norm = _normaliseRow(row)
+        const enr  = byId[norm.contentid] || {}
+        return {
+          ...row,
+          'source_1_rating':     enr.source_1_rating     || row.source_1_rating     || '',
+          'Updated_release_year': enr.Updated_release_year || row.Updated_release_year || '',
+          'Original_Language':   enr.Original_Language   || row.Original_Language   || '',
+          'IMDB ID':             enr['IMDB ID']           || row['IMDB ID']           || '',
+          'TMDB ID':             enr['TMDB ID']           || row['TMDB ID']           || '',
+          _matched_title: enr.matched_title || '',
+          _score:         enr.matched_score != null ? (enr.matched_score * 100).toFixed(0) + '%' : '',
+        }
+      })
+      setEnrichedRows(merged)
+    } catch (err) {
+      setUploadError('Enrichment failed: ' + (err.response?.data?.detail || err.message))
+    } finally {
+      setUploadEnriching(false)
+    }
+  }
+
+  function downloadEnrichedCSV() {
+    const rows = enrichedRows || uploadRows
+    const header = CSV_COLS.join('\t')
+    const lines  = rows.map(r => CSV_COLS.map(c => String(r[c] ?? '')).join('\t'))
+    const blob   = new Blob([header + '\n' + lines.join('\n')], { type: 'text/csv;charset=utf-8' })
+    const a      = Object.assign(document.createElement('a'), {
+      href: URL.createObjectURL(blob), download: 'enriched_output.csv'
+    })
+    a.click(); URL.revokeObjectURL(a.href)
   }
 
   // Local folder for CSV output
@@ -343,6 +445,24 @@ export default function App() {
           folderPath={folderPath}
           onClick={handlePickFolder}
         />
+        <input
+          ref={uploadRef}
+          type="file"
+          accept=".csv,.tsv,.xlsx,.xls"
+          style={{ display: 'none' }}
+          onChange={handleUploadFile}
+        />
+        <button
+          style={{
+            padding: '6px 14px', borderRadius: 8, border: '1px solid var(--border)',
+            background: 'var(--surface2)', color: 'var(--muted)', fontSize: '0.8rem',
+            cursor: 'pointer',
+          }}
+          onClick={() => uploadRef.current?.click()}
+          title="Upload CSV or XLSX to enrich in bulk"
+        >
+          📤 Upload CSV/XLSX
+        </button>
         <button
           style={{
             padding: '6px 14px', borderRadius: 8, border: '1px solid var(--border)',
@@ -354,6 +474,103 @@ export default function App() {
           Sign out
         </button>
       </header>
+
+      {/* Upload enrichment panel */}
+      {uploadPanel && (
+        <div style={{
+          position: 'fixed', inset: 0, background: '#000a', zIndex: 2000,
+          display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
+          padding: '40px 16px', overflowY: 'auto',
+        }}>
+          <div style={{
+            background: 'var(--surface)', border: '1px solid var(--border)',
+            borderRadius: 14, width: '100%', maxWidth: 1100,
+            boxShadow: '0 8px 48px #0009', padding: 28,
+          }}>
+            {/* Panel header */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18 }}>
+              <h2 style={{ margin: 0, fontSize: '1.1rem', color: 'var(--text)' }}>
+                📤 Upload Enrichment
+              </h2>
+              <span style={{ color: 'var(--muted)', fontSize: '0.85rem' }}>
+                {uploadRows.length} row{uploadRows.length !== 1 ? 's' : ''}
+              </span>
+              {uploadEnriching && (
+                <span style={{ color: 'var(--accent)', fontSize: '0.85rem' }}>⏳ Enriching…</span>
+              )}
+              {enrichedRows && !uploadEnriching && (
+                <span style={{ color: 'var(--success)', fontSize: '0.85rem' }}>✓ Done</span>
+              )}
+              <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+                {enrichedRows && (
+                  <button
+                    onClick={downloadEnrichedCSV}
+                    style={{
+                      padding: '6px 16px', borderRadius: 8, border: 'none',
+                      background: 'var(--success)', color: '#000', fontWeight: 700,
+                      fontSize: '0.85rem', cursor: 'pointer',
+                    }}
+                  >
+                    ⬇ Download Enriched CSV
+                  </button>
+                )}
+                <button
+                  onClick={() => setUploadPanel(false)}
+                  style={{
+                    padding: '6px 14px', borderRadius: 8, border: '1px solid var(--border)',
+                    background: 'var(--surface2)', color: 'var(--muted)', fontSize: '0.85rem',
+                    cursor: 'pointer',
+                  }}
+                >
+                  ✕ Close
+                </button>
+              </div>
+            </div>
+
+            {uploadError && (
+              <div style={{
+                background: '#ff5c7a22', border: '1px solid #ff5c7a55',
+                borderRadius: 8, padding: '9px 14px', color: '#ff5c7a',
+                fontSize: '0.85rem', marginBottom: 14,
+              }}>
+                ⚠️ {uploadError}
+              </div>
+            )}
+
+            {/* Results table */}
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
+                <thead>
+                  <tr style={{ background: 'var(--surface2)', color: 'var(--muted)', textAlign: 'left' }}>
+                    {['Content ID','Content Name','Type','IMDB ID','TMDB ID','Year','Lang','Rating','Matched Title','Score'].map(h => (
+                      <th key={h} style={{ padding: '7px 10px', borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {(enrichedRows || uploadRows).map((row, i) => {
+                    const norm = _normaliseRow(row)
+                    return (
+                      <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
+                        <td style={{ padding: '6px 10px', color: 'var(--accent)' }}>{norm.contentid}</td>
+                        <td style={{ padding: '6px 10px', color: 'var(--text)' }}>{norm.contentname}</td>
+                        <td style={{ padding: '6px 10px', color: 'var(--muted)' }}>{norm.contenttype}</td>
+                        <td style={{ padding: '6px 10px' }}>{String(row['IMDB ID'] ?? '')}</td>
+                        <td style={{ padding: '6px 10px' }}>{String(row['TMDB ID'] ?? '')}</td>
+                        <td style={{ padding: '6px 10px' }}>{String(row['Updated_release_year'] ?? norm.releaseyear)}</td>
+                        <td style={{ padding: '6px 10px' }}>{String(row['Original_Language'] ?? norm.language)}</td>
+                        <td style={{ padding: '6px 10px' }}>{String(row['source_1_rating'] ?? '')}</td>
+                        <td style={{ padding: '6px 10px', color: 'var(--muted)', fontStyle: 'italic' }}>{String(row._matched_title ?? '')}</td>
+                        <td style={{ padding: '6px 10px', color: row._score ? 'var(--success)' : 'var(--muted)' }}>{String(row._score ?? (uploadEnriching ? '…' : ''))}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
 
       <main className="main-content">
         {/* Filter panel */}
@@ -467,7 +684,9 @@ export default function App() {
 const _BACKEND = import.meta.env.VITE_BACKEND_URL || 'https://rohith696m-ai-metaenrichment-backend.hf.space'
 
 function _backendHeaders() {
-  return {}
+  const h = {}
+  if (import.meta.env.VITE_HF_TOKEN) h['Authorization'] = `Bearer ${import.meta.env.VITE_HF_TOKEN}`
+  return h
 }
 
 async function _backendGet(path) {

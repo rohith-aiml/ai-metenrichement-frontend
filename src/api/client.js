@@ -1,14 +1,16 @@
 import axios from 'axios'
 
-// In production (Vercel), all calls go through /api proxy (token added server-side).
-// In dev, calls go directly to the local backend or VITE_BACKEND_URL.
-const BACKEND_URL = import.meta.env.PROD
-  ? '/api'
-  : (import.meta.env.VITE_BACKEND_URL || 'http://localhost:8080')
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'https://rohith696m-ai-metaenrichment-backend.hf.space'
+
+const headers = {}
+if (import.meta.env.VITE_HF_TOKEN) {
+  headers['Authorization'] = `Bearer ${import.meta.env.VITE_HF_TOKEN}`
+}
 
 // Serialize array params as repeated keys: dates=a&dates=b (FastAPI List[str] compatible)
 const api = axios.create({
   baseURL: BACKEND_URL,
+  headers,
   paramsSerializer: (params) => {
     const parts = []
     for (const [key, val] of Object.entries(params)) {
@@ -75,3 +77,6 @@ export const removeManualEnrich = (projectId, contentId) =>
 // items: [{contentid, imgurl}, ...]  →  { results: { contentid: {tag, is_adult, label_detail, ...} } }
 export const moderateImages = (items) =>
   api.post('/moderate', { items }, { timeout: 120_000 }).then(r => r.data.results)
+
+export const enrichUpload = (items) =>
+  api.post('/enrich_upload', { items }, { timeout: 180_000 }).then(r => r.data.results)
